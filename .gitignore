@@ -13,12 +13,12 @@ target/
 .flattened-pom.xml
 
 ### IntelliJ IDEA ###
-.idea
 *.iws
 *.iml
 *.i
-
-
+*.ipr
+.idea
+.idea/**
 ### NetBeans ###
 nbproject/private/
 build/
