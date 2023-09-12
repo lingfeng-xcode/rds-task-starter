@@ -108,12 +108,13 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
         int pageNum = 0;
         //每次批量查询10个主任务
         List<String> mainTaskList = null;
+        Set<String> dbList = null;
         log.info("mainHandler_begin");
         int mainLoopSize = config.getMainLoopSize();
         AtomicInteger running = new AtomicInteger(0);
         do {
             //数字越小优先级越高
-            Set<String> dbList = rdsMainTask.pollAsc(mainTaskName, DEFAULT_PRIORITY_HIGH, DEFAULT_PRIORITY, pageNum, mainLoopSize);
+            dbList = rdsMainTask.pollAsc(mainTaskName, DEFAULT_PRIORITY_HIGH, DEFAULT_PRIORITY, pageNum, mainLoopSize);
             if (dbList != null && !dbList.isEmpty()) {
                 log.info("mainHandle_mainTaskList size {} list {}", dbList.size(), dbList);
                 mainTaskList = new ArrayList<>(dbList);
@@ -154,8 +155,9 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
                                 if (!executeQueue.contains(subTask) &&
                                         //尝试进入执行队列
                                         executeQueue.add(subTask)) {
-                                    //是否使用线程池执行业务，此处不必担心，线程池队列满了,因为executeQueue.add会对线程池进行限制
-                                    if (config.isUseThreadPool()) {
+                                    //是否使用线程池执行业务，此处不必担心线程池队列满了,因为executeQueue.add会对线程池进行限制
+                                    //如果业务执行很慢，且executeQueue限流大于biz线程池数量，可能会导致线程池排队
+                                    if (config.isUseBizThreadPool()) {
                                         //采用异步线程池执行
                                         bizThreadPool.execute(() -> runBizWork(mainTask, subTask, running));
                                     } else {
@@ -175,8 +177,8 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
             if (!executeQueue.free()) {
                 break;
             }
-            pageNum++;
-        } while (mainTaskList != null && mainTaskList.size() >= mainLoopSize);
+          //  pageNum++; 不需要++，因为1.循环内部会删除已经分配的任务，所以只查询第一页可以保证数据也是会更新的，2.要按照优先级查询
+        } while (dbList != null && dbList.size() >= mainLoopSize);
         log.info("本次循环分配了 {} 个任务", running.get());
     }
 

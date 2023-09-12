@@ -1,5 +1,6 @@
 package com.lf.xcode.rds.task.rdsbatch;
 
+import com.lf.xcode.rds.task.constant.TaskType;
 import com.lf.xcode.rds.task.rdsbatch.config.BatchTaskConfig;
 import com.lf.xcode.rds.task.rdsbatch.param.InvokeParam;
 import com.lf.xcode.rds.task.rdstask.RdsQueue;
@@ -59,16 +60,18 @@ public abstract class AbstractBatchTaskHandler<S> implements BatchTaskHandler<St
         this.mainTaskName = mainKey;
         this.prefix = prefix;
         //主任务列表
-        rdsMainTask = new RdsZsetTask(prefix + ":MAIN_TASK", jedisSupplier);
+        rdsMainTask = new RdsZsetTask(prefix + ":MAIN_TASK", jedisSupplier, config::getMainTaskLimit, config::getMainTaskExpireTime);
+        //子任务limit
+        Supplier<Integer> subLimitSupplier = config.getTaskType() == TaskType.SUB_TASK_NO_LIMIT ? () -> Integer.MAX_VALUE : config::getSubTaskLimit;
         //子任务列表
-        rdsSubTask = new RdsZsetTask(prefix + ":SUB_TASK", jedisSupplier);
+        rdsSubTask = new RdsZsetTask(prefix + ":SUB_TASK", jedisSupplier, subLimitSupplier, config::getSubTaskExpireTime);
         //执行队列
-        executeQueue = new RdsQueue(prefix + ":EXECUTE", jedisSupplier, distributedLock, config::getSubTaskLimit, config::getTaskTimeout);
+        executeQueue = new RdsQueue(prefix + ":EXECUTE", jedisSupplier, distributedLock, config::getExecuteTaskLimit, config::getTaskTimeout);
         //重试记录
         retryRecorder = new RetryRecorder(config, prefix, jedisSupplier);
         //线程池初始化
-        if (config.isUseThreadPool()) {
-            bizThreadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
+        if (config.isUseBizThreadPool()) {
+            bizThreadPool = Executors.newFixedThreadPool(config.getBizThreadPoolSize());
         }
         log.info("{} init", this);
     }

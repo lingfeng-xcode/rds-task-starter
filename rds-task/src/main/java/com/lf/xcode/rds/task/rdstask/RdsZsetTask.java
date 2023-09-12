@@ -12,27 +12,31 @@ import static com.lf.xcode.rds.task.constant.NameSpaceConstant.NAMESPACE;
 
 /**
  * 基于redis实现的zset任务
- * 1.limit 非线程安全
+ * 1.limit 非线程安全 不支持自动限制
  * 2.支持排序查询
  */
 public class RdsZsetTask implements ZsetTask<String> {
 
     //任务的前缀
     public static final String XCODE_RDS_TASK_RDS_ZSET_TASK = NAMESPACE + ":ZSET_TASK:";
-    //默认超时时间: 3个月
-    public static final long DEFAULT_TIMEOUT_MS = 1000 * 60 * 60 * 24 * 30 * 3;
+    //默认超时时间: 1个月
+    private static final long DEFAULT_TIMEOUT_MS = 1000 * 60 * 60 * 24 * 30L;
     private final Supplier<Jedis> jedisSupplier;
     private final String taskType;
     //默认任务limit
-    @Setter
-    private volatile int limit = 10;
+    private final Supplier<Integer> limitSupplier;
     @Setter
     //默认过期时间
-    private volatile long taskExpireTime = DEFAULT_TIMEOUT_MS;
+    private final Supplier<Long> expireFunc;
 
-    public RdsZsetTask(String taskType, Supplier<Jedis> jedisSupplier) {
+    public static final int NO_LIMIT = -1;
+    public static final long NO_EXPIRE = -1L;
+
+    public RdsZsetTask(String taskType, Supplier<Jedis> jedisSupplier, Supplier<Integer> limitSupplier, Supplier<Long> expireFunc) {
         this.taskType = taskType.endsWith(":") ? taskType : taskType + ":";
         this.jedisSupplier = jedisSupplier;
+        this.expireFunc = expireFunc;
+        this.limitSupplier = limitSupplier;
     }
 
 
@@ -40,13 +44,58 @@ public class RdsZsetTask implements ZsetTask<String> {
         return XCODE_RDS_TASK_RDS_ZSET_TASK + taskType + key;
     }
 
+    /**
+     * 计算任务的过期时间
+     *
+     * @param key
+     * @return
+     */
+    private long getTaskTimeoutMsAt(String key) {
+        //每个任务的超时时间总和即为，总任务的存活时间
+        if (expireFunc.get() == null || expireFunc.get() == NO_EXPIRE) {
+            return NO_EXPIRE;
+        }
+        long timeout = expireFunc.get() == 0 ? DEFAULT_TIMEOUT_MS : expireFunc.get() * (size(key) + 1);
+        long ttl = ttl(key); //获取当前的过期时间
+        long newTTL = System.currentTimeMillis() + timeout;
+        return ttl > newTTL ? ttl + timeout : newTTL;
+    }
+
+    /**
+     * 获取当前的过期时间
+     *
+     * @param key
+     * @return
+     */
+    private long ttl(String key) {
+        try (Jedis jedis = jedisSupplier.get()) {
+            Long ttl = jedis.ttl(generateKey(key));
+            return ttl == null ? 0 : ttl;
+        }
+    }
+
     @Override
     public boolean add(String key, String value, double score) {
         try (Jedis jedis = jedisSupplier.get()) {
             jedis.zadd(generateKey(key), score, value);
-            jedis.pexpireAt(generateKey(key), System.currentTimeMillis() + taskExpireTime);
+            setExpire(jedis, generateKey(key));
         }
         return true;
+    }
+
+    /**
+     * 设置过期时间
+     *
+     * @param jedis
+     * @param key
+     */
+    private void setExpire(Jedis jedis, String key) {
+        long expireTime = getTaskTimeoutMsAt(key);
+        if (expireTime != NO_EXPIRE) {
+            jedis.pexpireAt(key, expireTime);
+        } else {
+            //不设置过期时间
+        }
     }
 
     @Override
@@ -57,7 +106,7 @@ public class RdsZsetTask implements ZsetTask<String> {
         }
         try (Jedis jedis = jedisSupplier.get()) {
             jedis.zadd(generateKey(key), map);
-            jedis.pexpireAt(generateKey(key), System.currentTimeMillis() + taskExpireTime);
+            setExpire(jedis, generateKey(key));
         }
         return true;
     }
@@ -141,24 +190,8 @@ public class RdsZsetTask implements ZsetTask<String> {
     }
 
     @Override
-    public void setLimit(String key, int limit) {
-        this.limit = limit;
-    }
-
-    @Override
-    public int getLimit(String key) {
-        return limit;
-    }
-
-    @Override
-    public void setExpireTimeout(String key, long ms) {
-        this.taskExpireTime = ms;
-    }
-
-
-    @Override
     public int freeSize(String key) {
-        return getLimit(key) - size(key);
+        return limitSupplier.get() - size(key);
     }
 
     @Override

@@ -28,12 +28,6 @@ public interface ZsetTask<T> {
 
     int size(String key, double min, double max);
 
-    void setLimit(String key, int limit);
-
-    int getLimit(String key);
-
-    void setExpireTimeout(String key, long ms);
-
     int freeSize(String key);
     void clear(String key);
 
