@@ -1,0 +1,9 @@
+spring:
+  redis:
+    host: xxx
+    port: 6379
+    password: xxx
+    database: 0
+    timeout: 3s
+server:
+  port: 8080

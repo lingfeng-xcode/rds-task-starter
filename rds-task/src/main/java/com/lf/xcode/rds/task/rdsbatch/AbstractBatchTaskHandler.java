@@ -31,7 +31,7 @@ public abstract class AbstractBatchTaskHandler<S> implements BatchTaskHandler<St
     //重试记录器
     protected final RetryRecorder retryRecorder;
     //业务处理器
-    protected final Function<InvokeParam, Boolean> bizHandler;
+    protected final Supplier<Function<InvokeParam, Boolean>> bizHandler;
 
     //父任务-默认优先级
     protected final static double DEFAULT_PRIORITY = 1;
@@ -51,7 +51,7 @@ public abstract class AbstractBatchTaskHandler<S> implements BatchTaskHandler<St
     AbstractBatchTaskHandler(Supplier<Jedis> jedisSupplier,
                              Function<Supplier<Boolean>, Boolean> distributedLock,
                              BatchTaskConfig config,
-                             Function<InvokeParam, Boolean> bizHandler,
+                             Supplier<Function<InvokeParam, Boolean>> bizHandler,
                              String mainKey, String prefix) {
         this.jedisSupplier = jedisSupplier;
         this.distributedLock = distributedLock;

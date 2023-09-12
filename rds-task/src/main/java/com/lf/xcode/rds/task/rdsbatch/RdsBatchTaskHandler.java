@@ -34,7 +34,7 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
     public RdsBatchTaskHandler(Supplier<Jedis> jedisSupplier,
                                Function<Supplier<Boolean>, Boolean> distributedLock,
                                BatchTaskConfig config,
-                               Function<InvokeParam, Boolean> bizFunction,
+                               Supplier<Function<InvokeParam, Boolean>> bizFunction,
                                String mainKey, String prefix) {
         super(jedisSupplier, distributedLock, config, bizFunction, mainKey, prefix);
         log.info("{}{}RdsBatchTaskHandler init", mainKey, prefix);
@@ -64,7 +64,7 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
             if (diff > 0) {
                 try {
                     diff = diff + RandomUtil.randomInt(500, 1000);
-                    log.info("mainLoop_sleep {}", diff);
+                    log.info("mainLoop_sleep {} ms", diff);
                     TimeUnit.MILLISECONDS.sleep(diff);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -83,7 +83,8 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
     @Override
     public boolean doBizTask(String mainTask, String subTask) {
         try {
-            return bizHandler.apply(new InvokeParam().setMainTask(mainTask).setSubTask(subTask));
+            Function<InvokeParam, Boolean> bizFunc = bizHandler.get();
+            return bizFunc.apply(new InvokeParam().setMainTask(mainTask).setSubTask(subTask));
         } catch (Exception e) {
             log.info(e.getMessage(), ExceptionUtil.getMessage(e, 10));
             return false;
@@ -177,7 +178,7 @@ public class RdsBatchTaskHandler extends AbstractBatchTaskHandler<String> {
             if (!executeQueue.free()) {
                 break;
             }
-          //  pageNum++; 不需要++，因为1.循环内部会删除已经分配的任务，所以只查询第一页可以保证数据也是会更新的，2.要按照优先级查询
+            //  pageNum++; 不需要++，因为1.循环内部会删除已经分配的任务，所以只查询第一页可以保证数据也是会更新的，2.要按照优先级查询
         } while (dbList != null && dbList.size() >= mainLoopSize);
         log.info("本次循环分配了 {} 个任务", running.get());
     }
